@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
-  name: s3-write-task
+  name: write-to-s3-task
 spec:
   params:
     - name: AWS_REGION
