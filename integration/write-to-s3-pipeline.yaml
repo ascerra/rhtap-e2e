@@ -6,15 +6,11 @@ spec:
   tasks:
     - name: write-to-s3-task
       taskRef:
-        name: write-to-s3
-      env:
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: aws-credentials-secret
-              key: accessKeyId
-        - name: AWS_SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: aws-credentials-secret
-              key: secretAccessKey
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/ascerra/rhtap-e2e
+          - name: revision
+            value: bucket-testing
+          - name: pathInRepo
+            value: integration/write-to-s3-task.yaml
