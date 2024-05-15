@@ -13,6 +13,12 @@ spec:
     - name: DESTINATION_PATH
       default: 'logs/artifacts'
       type: string
+    - name: pipelinerun-name
+      description: "PipelineRun Name"
+      type: string
+    - name: pipelinerun-uid
+      description: "PipelineRun UID"
+      type: string
   volumes:
     - name: secret-volume
       secret:
@@ -23,6 +29,19 @@ spec:
       script: |
         #!/bin/sh
         
+        echo "Environment variables:"
+        printenv
+        echo ""
+        echo "Tekton-specific variables:"
+        for var in $(env | grep '^TEKTON_'); do
+          echo "$var"
+        done
+        echo ""
+        echo "PipelineRun-specific variables:"
+        for var in $(env | grep '^PIPELINE_RUN_'); do
+          echo "$var"
+        done
+
         # Configure AWS creds       
         aws configure set aws_access_key_id $(cat /workspace/AWS_ACCESS_KEY_ID)
         aws configure set aws_secret_access_key $(cat /workspace/AWS_SECRET_ACCESS_KEY)
@@ -47,7 +66,7 @@ spec:
         </testsuites>' > test_report.xml
 
         # Write XML data to bucket creating a unique dir using taskRun.name
-        aws s3 cp test_report.xml s3://$(inputs.params.AWS_S3_BUCKET)/$(inputs.params.DESTINATION_PATH)/$(context.pipelineRun.name)/$(context.pipelineRun.uid)/ --region $(inputs.params.AWS_REGION)
+        aws s3 cp test_report.xml s3://$(inputs.params.AWS_S3_BUCKET)/$(inputs.params.DESTINATION_PATH)/$(inputs.params.pipelinerun-name)/$(inputs.params.pipelinerun-uid)/ --region $(inputs.params.AWS_REGION)
 
       volumeMounts:
         - name: secret-volume
