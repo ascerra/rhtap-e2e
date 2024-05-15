@@ -6,7 +6,7 @@ spec:
   tasks:
     - name: write-to-s3-task
       taskRef:
-        name: write-to-s3
+        name: write-to-s3-task
       env:
         - name: AWS_ACCESS_KEY_ID
           valueFrom:
