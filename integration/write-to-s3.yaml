@@ -22,33 +22,21 @@ spec:
       image: amazon/aws-cli
       script: |
         #!/bin/sh
-       
-        AWS_ACCESS_KEY_ID=$(cat /workspace/AWS_ACCESS_KEY_ID)
-        AWS_SECRET_ACCESS_KEY=$(cat /workspace/AWS_SECRET_ACCESS_KEY)
-        
-        export AWS_ACCESS_KEY_ID
-        export AWS_SECRET_ACCESS_KEY
         
         # Configure AWS creds       
-        aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
-        aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+        aws configure set aws_access_key_id $(cat /workspace/AWS_ACCESS_KEY_ID)
+        aws configure set aws_secret_access_key $(cat /workspace/AWS_SECRET_ACCESS_KEY)
         aws configure set region $(inputs.params.AWS_REGION)
 
         # Assume role and interact with new temp creds
-        AWS_ROLE_ARN=$(cat /workspace/AWS_ROLE_ARN)
-        export AWS_ROLE_ARN
-        CREDS=$(aws sts assume-role --role-arn $AWS_ROLE_ARN --role-session-name tekton-s3-write-task --output json)
+        aws sts assume-role --role-arn $(cat /workspace/AWS_ROLE_ARN) --role-session-name tekton-s3-write-task --output json > tmp_credentials.json
         
         # Extract and export the new temp session creds
         yum install -y jq
 
-        export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | jq -r '.Credentials.AccessKeyId')
-        export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.Credentials.SecretAccessKey')
-        export AWS_SESSION_TOKEN=$(echo "$CREDS" | jq -r '.Credentials.SessionToken')
-
-        export AWS_ACCESS_KEY_ID
-        export AWS_SECRET_ACCESS_KEY
-        export AWS_SESSION_TOKEN
+        aws configure set aws_access_key_id $(jq -r '.Credentials.AccessKeyId' tmp_credentials.json)
+        aws configure set aws_secret_access_key $(jq -r '.Credentials.SecretAccessKey' tmp_credentials.json)
+        aws configure set aws_session_token $(jq -r '.Credentials.SessionToken' tmp_credentials.json)
 
         # Create sample XML for testing file write
         echo '<?xml version="1.0" encoding="UTF-8"?>
@@ -59,8 +47,9 @@ spec:
         </testsuites>' > test_report.xml
 
         # Write XML data to bucket creating a unique dir using taskRun.name
-        aws s3 cp test_report.xml s3://$(inputs.params.AWS_S3_BUCKET)/$(inputs.params.DESTINATION_PATH)/$(context.taskRun.name)/ --region $(inputs.params.AWS_REGION)
+        aws s3 cp test_report.xml s3://$(inputs.params.AWS_S3_BUCKET)/$(inputs.params.DESTINATION_PATH)/$(context.pipelineRun.name)/$(context.pipelineRun.uid)/ --region $(inputs.params.AWS_REGION)
 
       volumeMounts:
         - name: secret-volume
           mountPath: /workspace
+
