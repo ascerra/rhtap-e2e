@@ -52,4 +52,3 @@ spec:
       volumeMounts:
         - name: secret-volume
           mountPath: /workspace
-
