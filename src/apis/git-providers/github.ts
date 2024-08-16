@@ -1,7 +1,7 @@
 import { Octokit } from "@octokit/rest";
 import { AxiosError } from "axios";
 import { Utils } from "./utils";
-import { generateRandomName } from "../../utils/generator";
+import { generateRandomChars } from "../../utils/generator";
 
 export class GitHubProvider extends Utils {
     private readonly octokit: Octokit
@@ -29,6 +29,47 @@ export class GitHubProvider extends Utils {
         } catch (error) {
             console.log(error)
 
+            return false
+        }
+    }
+
+    /**
+     * Check, if repo exists and delete, returns true if a repository exists and was deleted in GitHub
+     * @param organization A valid GitHub organization
+     * @param name A valid GitHub repository
+     */
+    public async checkIfRepositoryExistsAndDelete(organization: string, name: string): Promise<boolean> {
+        //Check, if repo exists and delete
+        try {
+            if (await this.checkIfRepositoryExists(organization, name)) {
+                await this.deleteRepository(organization, name)
+                return true
+            } 
+            return false
+        } catch (error) {
+            console.log(error)
+            return false
+        }
+    }
+
+    /**
+     * delete repository in GitHub
+     * @param organization A valid GitHub organization
+     * @param name A valid GitHub repository
+     */
+    public async deleteRepository(organization: string, name: string): Promise<boolean> {
+        try {
+            const repositoryResponse = await this.octokit.request('DELETE /repos/'+organization+'/'+`${name}`, {
+                owner: organization,
+                repo: `${name}`,
+                headers: {
+                    'X-GitHub-Api-Version': '2022-11-28'
+                }
+            })
+            return repositoryResponse.status === 204
+        } catch (error) {
+            console.log(error)
+    
             return false
         }
     }
@@ -87,7 +128,7 @@ export class GitHubProvider extends Utils {
 
     public async createPullRequestFromMainBranch(owner: string, repo: string, filePath: string, content: string, fileSHA = ""): Promise<number | undefined> {
         const baseBranch = "main"; // Specify the base branch
-        const newBranch = generateRandomName(); // Specify the new branch name
+        const newBranch = generateRandomChars(5); // Specify the new branch name
     
         try {
             const { data: latestCommit } = await this.octokit.repos.getBranch({

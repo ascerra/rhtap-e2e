@@ -1,10 +1,11 @@
-import { beforeAll, describe, expect, it, jest } from '@jest/globals';
+import { afterAll, beforeAll, describe, expect, it, jest } from '@jest/globals';
 import { DeveloperHubClient } from '../../../../src/apis/backstage/developer-hub'
 import { TaskIdReponse } from '../../../../src/apis/backstage/types';
-import { generateRandomName } from '../../../../src/utils/generator';
+import { generateRandomChars } from '../../../../src/utils/generator';
 import { GitHubProvider } from "../../../../src/apis/git-providers/github";
 import { Kubernetes } from "../../../../src/apis/kubernetes/kube";
 import { ScaffolderScaffoldOptions } from '@backstage/plugin-scaffolder-react';
+import { cleanAfterTestGitHub } from "../../../../src/utils/test.utils";
 
 /**
  * 1. Components get created in Red Hat Developer Hub
@@ -15,16 +16,18 @@ import { ScaffolderScaffoldOptions } from '@backstage/plugin-scaffolder-react';
  * wait for RHTAP bug to be solved: https://issues.redhat.com/browse/RHTAPBUGS-1136
  */
 export const gitHubBasicGoldenPathTemplateTests = (gptTemplate: string) => {
-    describe(`Red Hat Trusted Application Pipeline ${gptTemplate} GPT tests GitHub provider`, () => {
+    describe(`Red Hat Trusted Application Pipeline ${gptTemplate} GPT tests GitHub provider with public/private image registry`, () => {
         jest.retryTimes(2);
 
         const backstageClient =  new DeveloperHubClient();
         const componentRootNamespace = process.env.APPLICATION_ROOT_NAMESPACE || '';
+        const RHTAPRootNamespace = process.env.RHTAP_ROOT_NAMESPACE || 'rhtap';
         const developmentNamespace = `${componentRootNamespace}-development`;
 
         const githubOrganization = process.env.GITHUB_ORGANIZATION || '';
-        const repositoryName = `${generateRandomName()}-${gptTemplate}`;
+        const repositoryName = `${generateRandomChars(9)}-${gptTemplate}`;
 
+        const quayImageName = "rhtap-qe";
         const quayImageOrg = process.env.QUAY_IMAGE_ORG || '';
 
         let developerHubTask: TaskIdReponse;
@@ -89,14 +92,15 @@ export const gitHubBasicGoldenPathTemplateTests = (gptTemplate: string) => {
                     branch: 'main',
                     githubServer: 'github.com',
                     hostType: 'GitHub',
-                    imageName: 'rhtap-qe',
+                    imageName: quayImageName,
                     imageOrg: quayImageOrg,
                     imageRegistry: 'quay.io',
                     name: repositoryName,
                     namespace: componentRootNamespace,
                     owner: "user:guest",
                     repoName: repositoryName,
-                    repoOwner: githubOrganization
+                    repoOwner: githubOrganization, 
+                    ciType: "tekton"
                 }
             };
 
@@ -190,5 +194,16 @@ export const gitHubBasicGoldenPathTemplateTests = (gptTemplate: string) => {
                 expect(finished).toBe(true)
             }
         }, 900000)
+
+
+        /**
+        * Deletes created applications
+        */
+        afterAll(async () => {
+            if (process.env.CLEAN_AFTER_TESTS === 'true') {
+                await cleanAfterTestGitHub(gitHubClient, kubeClient, RHTAPRootNamespace, githubOrganization, repositoryName)
+            }
+        })
     })
+
 }

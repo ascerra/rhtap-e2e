@@ -1,11 +1,12 @@
 import { beforeAll, describe, expect, it } from '@jest/globals';
 import { DeveloperHubClient } from '../../../../src/apis/backstage/developer-hub'
 import { TaskIdReponse } from '../../../../src/apis/backstage/types';
-import { generateRandomName } from '../../../../src/utils/generator';
+import { generateRandomChars } from '../../../../src/utils/generator';
 import { syncArgoApplication } from '../../../../src/utils/argocd';
 import { GitHubProvider } from "../../../../src/apis/git-providers/github";
 import { Kubernetes } from "../../../../src/apis/kubernetes/kube";
 import { ScaffolderScaffoldOptions } from '@backstage/plugin-scaffolder-react';
+import { cleanAfterTestGitHub } from "../../../../src/utils/test.utils";
 
 /**
  * Advanced end-to-end test scenario for Red Hat Trusted Application Pipelines:
@@ -26,20 +27,22 @@ import { ScaffolderScaffoldOptions } from '@backstage/plugin-scaffolder-react';
  * 15. Wait for the new image to be deployed to the production environment.
  */
 export const githubSoftwareTemplatesAdvancedScenarios = (gptTemplate: string) => {
-    describe(`Red Hat Trusted Application Pipeline ${gptTemplate} GPT tests GitHub provider`, () => {
+    describe(`Red Hat Trusted Application Pipeline ${gptTemplate} GPT tests GitHub provider with public/private image registry`, () => {
 
         const backstageClient =  new DeveloperHubClient();
         const componentRootNamespace = process.env.APPLICATION_ROOT_NAMESPACE || '';
+        const RHTAPRootNamespace = process.env.RHTAP_ROOT_NAMESPACE || 'rhtap';
         const developmentEnvironmentName = 'development';
         const stagingEnvironmentName = 'stage';
         const productionEnvironmentName = 'prod';
+        const quayImageName = "rhtap-qe";
 
         const developmentNamespace = `${componentRootNamespace}-${developmentEnvironmentName}`;
         const stageNamespace = `${componentRootNamespace}-${stagingEnvironmentName}`;
         const prodNamespace = `${componentRootNamespace}-${productionEnvironmentName}`;
 
         const githubOrganization = process.env.GITHUB_ORGANIZATION || '';
-        const repositoryName = `${generateRandomName()}-${gptTemplate}`;
+        const repositoryName = `${generateRandomChars(9)}-${gptTemplate}`;
 
         const quayImageOrg = process.env.QUAY_IMAGE_ORG || '';
 
@@ -112,14 +115,15 @@ export const githubSoftwareTemplatesAdvancedScenarios = (gptTemplate: string) =>
                     branch: 'main',
                     githubServer: 'github.com',
                     hostType: 'GitHub',
-                    imageName: 'rhtap-qe',
+                    imageName: quayImageName,
                     imageOrg: quayImageOrg,
                     imageRegistry: 'quay.io',
                     name: repositoryName,
                     namespace: componentRootNamespace,
                     owner: "user:guest",
                     repoName: repositoryName,
-                    repoOwner: githubOrganization
+                    repoOwner: githubOrganization,
+                    ciType: "tekton"
                 }
             };
 
@@ -262,7 +266,7 @@ export const githubSoftwareTemplatesAdvancedScenarios = (gptTemplate: string) =>
          */
         it('container component is successfully synced by gitops in development environment', async ()=> {
             console.log("syncing argocd application in development environment")
-            await syncArgoApplication('rhtap', `${repositoryName}-${developmentEnvironmentName}`)
+            await syncArgoApplication(RHTAPRootNamespace, `${repositoryName}-${developmentEnvironmentName}`)
 
             const componentRoute = await kubeClient.getOpenshiftRoute(repositoryName, developmentNamespace)
 
@@ -406,5 +410,14 @@ export const githubSoftwareTemplatesAdvancedScenarios = (gptTemplate: string) =>
                 throw new Error("Component seems was not synced by ArgoCD in 10 minutes");
             }
         }, 900000)
+
+        /**
+        * Deletes created applications
+        */
+        afterAll(async () => {
+            if (process.env.CLEAN_AFTER_TESTS === 'true') {
+                await cleanAfterTestGitHub(gitHubClient, kubeClient, RHTAPRootNamespace, githubOrganization, repositoryName)
+            }
+        })
     })
 }

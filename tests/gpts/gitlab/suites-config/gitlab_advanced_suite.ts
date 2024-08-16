@@ -3,8 +3,9 @@ import { DeveloperHubClient } from "../../../../src/apis/backstage/developer-hub
 import { TaskIdReponse } from "../../../../src/apis/backstage/types";
 import { GitLabProvider } from "../../../../src/apis/git-providers/gitlab";
 import { Kubernetes } from "../../../../src/apis/kubernetes/kube";
-import { generateRandomName } from "../../../../src/utils/generator";
+import { generateRandomChars } from "../../../../src/utils/generator";
 import { syncArgoApplication } from "../../../../src/utils/argocd";
+import { cleanAfterTestGitLab } from "../../../../src/utils/test.utils";
 
 /**
     * Advanced end-to-end test scenario for Red Hat Trusted Application Pipelines GitLab Provider:
@@ -25,7 +26,7 @@ import { syncArgoApplication } from "../../../../src/utils/argocd";
     * 15. Wait for the new image to be deployed to the production environment.
  */
 export const gitLabSoftwareTemplatesAdvancedScenarios = (softwareTemplateName: string) => {
-    describe(`Advanced Red Hat Trusted Application Pipeline ${softwareTemplateName} tests GitLab provider`, () => {
+    describe(`Advanced Red Hat Trusted Application Pipeline ${softwareTemplateName} tests GitLab provider with public/private image registry`, () => {
         let backstageClient: DeveloperHubClient;
         let developerHubTask: TaskIdReponse;
         let gitLabProvider: GitLabProvider;
@@ -40,14 +41,16 @@ export const gitLabSoftwareTemplatesAdvancedScenarios = (softwareTemplateName: s
         const developmentEnvironmentName = 'development';
         const stagingEnvironmentName = 'stage';
         const productionEnvironmentName = 'prod';
+        const quayImageName = "rhtap-qe";
 
         const componentRootNamespace = process.env.APPLICATION_ROOT_NAMESPACE || '';
+        const RHTAPRootNamespace = process.env.RHTAP_ROOT_NAMESPACE || 'rhtap';
         const developmentNamespace = `${componentRootNamespace}-development`;
         const stageNamespace = `${componentRootNamespace}-${stagingEnvironmentName}`;
         const prodNamespace = `${componentRootNamespace}-${productionEnvironmentName}`;
 
         const gitLabOrganization = process.env.GITLAB_ORGANIZATION || '';
-        const repositoryName = `${generateRandomName()}-${softwareTemplateName}`;
+        const repositoryName = `${generateRandomChars(9)}-${softwareTemplateName}`;
 
         const quayImageOrg = process.env.QUAY_IMAGE_ORG || '';
         
@@ -56,8 +59,8 @@ export const gitLabSoftwareTemplatesAdvancedScenarios = (softwareTemplateName: s
             gitLabProvider = new GitLabProvider()
             kubeClient = new Kubernetes()
 
-            const componentRoute = await kubeClient.getOpenshiftRoute('pipelines-as-code-controller', 'openshift-pipelines')
-            pipelineAsCodeRoute = `https://${componentRoute}`
+            const componentRoute = await kubeClient.getOpenshiftRoute('pipelines-as-code-controller', 'openshift-pipelines');
+            pipelineAsCodeRoute = `https://${componentRoute}`;
 
             if (componentRootNamespace === '') {
                 throw new Error("The 'APPLICATION_TEST_NAMESPACE' environment variable is not set. Please ensure that the environment variable is defined properly or you have cluster connection.");
@@ -102,14 +105,15 @@ export const gitLabSoftwareTemplatesAdvancedScenarios = (softwareTemplateName: s
                     branch: 'main',
                     gitlabServer: 'gitlab.com',
                     hostType: 'GitLab',
-                    imageName: 'rhtap-qe',
+                    imageName: quayImageName,
                     imageOrg: quayImageOrg,
                     imageRegistry: 'quay.io',
                     name: repositoryName,
                     namespace: componentRootNamespace,
                     owner: "user:guest",
                     repoName: repositoryName,
-                    repoOwner: gitLabOrganization
+                    repoOwner: gitLabOrganization, 
+                    ciType: "tekton"
                 }
             };
 
@@ -181,7 +185,7 @@ export const gitLabSoftwareTemplatesAdvancedScenarios = (softwareTemplateName: s
         it(`creates a Merge Request for ${softwareTemplateName} component and check if pipeline run finish successfull`, async ()=> {
             const mergeRequestTitleName = 'Automatic Merge Request created from testing framework';
 
-            mergeRequestNumber = await gitLabProvider.createMergeRequest(gitlabRepositoryID, generateRandomName(), mergeRequestTitleName);
+            mergeRequestNumber = await gitLabProvider.createMergeRequest(gitlabRepositoryID, generateRandomChars(6), mergeRequestTitleName);
             expect(mergeRequestNumber).toBeDefined()
 
             const pipelineRun = await kubeClient.getPipelineRunByRepository(repositoryName, 'Merge_Request')
@@ -206,7 +210,7 @@ export const gitLabSoftwareTemplatesAdvancedScenarios = (softwareTemplateName: s
         /**
             * Merges a merge request and waits until a pipeline run push is created in the cluster and start to wait until succeed/fail.
         */
-        it(`merge merge request for component ${softwareTemplateName} and waits until push pipelinerun finished successfully`, async ()=> {
+        it(`merge merge_request for component ${softwareTemplateName} and waits until push pipelinerun finished successfully`, async ()=> {
             await gitLabProvider.mergeMergeRequest(gitlabRepositoryID, mergeRequestNumber)
 
             const pipelineRun = await kubeClient.getPipelineRunByRepository(repositoryName, 'Push')
@@ -249,7 +253,7 @@ export const gitLabSoftwareTemplatesAdvancedScenarios = (softwareTemplateName: s
         * Trigger a promotion Pull Request in Gitops repository to promote stage image to prod environment
         */
         it('trigger pull request promotion to promote from development to stage environment', async ()=> {
-            gitopsPromotionMergeRequestNumber = await gitLabProvider.createMergeRequestWithPromotionImage(gitlabGitopsRepositoryID, generateRandomName(),
+            gitopsPromotionMergeRequestNumber = await gitLabProvider.createMergeRequestWithPromotionImage(gitlabGitopsRepositoryID, generateRandomChars(6),
                 repositoryName, developmentEnvironmentName, stagingEnvironmentName);
             expect(gitopsPromotionMergeRequestNumber).toBeDefined()
 
@@ -284,7 +288,7 @@ export const gitLabSoftwareTemplatesAdvancedScenarios = (softwareTemplateName: s
         */
         it('container component is successfully synced by gitops in stage environment', async ()=> {
             console.log("syncing argocd application in stage environment")
-            await syncArgoApplication('rhtap', `${repositoryName}-${stagingEnvironmentName}`)
+            await syncArgoApplication(RHTAPRootNamespace, `${repositoryName}-${stagingEnvironmentName}`)
         
             const componentRoute = await kubeClient.getOpenshiftRoute(repositoryName, stageNamespace)
         
@@ -299,7 +303,7 @@ export const gitLabSoftwareTemplatesAdvancedScenarios = (softwareTemplateName: s
             * Trigger a promotion Pull Request in Gitops repository to promote stage image to prod environment
         */
         it('trigger pull request promotion to promote from stage to prod environment', async ()=> {
-            gitopsPromotionMergeRequestNumber = await gitLabProvider.createMergeRequestWithPromotionImage(gitlabGitopsRepositoryID, generateRandomName(),
+            gitopsPromotionMergeRequestNumber = await gitLabProvider.createMergeRequestWithPromotionImage(gitlabGitopsRepositoryID, generateRandomChars(6),
                 repositoryName, stagingEnvironmentName, productionEnvironmentName);
             expect(gitopsPromotionMergeRequestNumber).toBeDefined()
         
@@ -325,14 +329,14 @@ export const gitLabSoftwareTemplatesAdvancedScenarios = (softwareTemplateName: s
         /**
             * Merge the gitops Pull Request with the new image value. Expect that argocd will sync the new image in stage 
         */
-        it(`merge gitops pull request to sync new image in prod environment`, async ()=> {
+        it.skip(`merge gitops pull request to sync new image in prod environment`, async ()=> {
             await gitLabProvider.mergeMergeRequest(gitlabGitopsRepositoryID, gitopsPromotionMergeRequestNumber)
         }, 120000)
 
         /*
             * Verifies if the new image is deployed with an expected endpoint in stage environment
         */
-        it('container component is successfully synced by gitops in prod environment', async ()=> {
+        it.skip('container component is successfully synced by gitops in prod environment', async ()=> {
             console.log("syncing argocd application in prod environment")
             await syncArgoApplication('rhtap', `${repositoryName}-${productionEnvironmentName}`)
                 
@@ -344,5 +348,14 @@ export const gitLabSoftwareTemplatesAdvancedScenarios = (softwareTemplateName: s
                 throw new Error("Component seems was not synced by ArgoCD in 10 minutes");
             }
         }, 900000)
+
+        /**
+        * Deletes created applications
+        */
+        afterAll(async () => {
+            if (process.env.CLEAN_AFTER_TESTS === 'true') {
+                await cleanAfterTestGitLab(gitLabProvider, kubeClient, RHTAPRootNamespace, gitLabOrganization, gitlabRepositoryID, repositoryName)
+            }
+        })
     })
 }

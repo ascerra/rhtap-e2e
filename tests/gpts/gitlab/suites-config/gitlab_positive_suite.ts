@@ -4,7 +4,8 @@ import { TaskIdReponse } from "../../../../src/apis/backstage/types";
 import { GitLabProvider } from "../../../../src/apis/git-providers/gitlab";
 import { Kubernetes } from "../../../../src/apis/kubernetes/kube";
 import { ScaffolderScaffoldOptions } from "@backstage/plugin-scaffolder-react";
-import { generateRandomName } from "../../../../src/utils/generator";
+import { generateRandomChars } from "../../../../src/utils/generator";
+import { cleanAfterTestGitLab } from "../../../../src/utils/test.utils";
 
 /**
  * 1. Creates a component in Red Hat Developer Hub.
@@ -16,7 +17,7 @@ import { generateRandomName } from "../../../../src/utils/generator";
  * @param softwareTemplateName The name of the software template.
  */
 export const gitLabProviderBasicTests = (softwareTemplateName: string) => {
-    describe(`Red Hat Trusted Application Pipeline ${softwareTemplateName} GPT tests GitLab provider`, () => {
+    describe(`Red Hat Trusted Application Pipeline ${softwareTemplateName} GPT tests GitLab provider with public/private image registry`, () => {
         jest.retryTimes(2);
 
         let backstageClient: DeveloperHubClient;
@@ -25,20 +26,26 @@ export const gitLabProviderBasicTests = (softwareTemplateName: string) => {
         let kubeClient: Kubernetes;
     
         let gitlabRepositoryID: number;
+        let pipelineAsCodeRoute: string;
         
         const componentRootNamespace = process.env.APPLICATION_ROOT_NAMESPACE || '';
+        const RHTAPRootNamespace = process.env.RHTAP_ROOT_NAMESPACE || 'rhtap';
         const developmentNamespace = `${componentRootNamespace}-development`;
     
         const gitLabOrganization = process.env.GITLAB_ORGANIZATION || '';
-        const repositoryName = `${generateRandomName()}-${softwareTemplateName}`;
+        const repositoryName = `${generateRandomChars(9)}-${softwareTemplateName}`;
     
+        const quayImageName = "rhtap-qe";
         const quayImageOrg = process.env.QUAY_IMAGE_ORG || '';
     
         beforeAll(async ()=> {
             backstageClient = new DeveloperHubClient();
             gitLabProvider = new GitLabProvider()
             kubeClient = new Kubernetes()
-    
+
+            const componentRoute = await kubeClient.getOpenshiftRoute('pipelines-as-code-controller', 'openshift-pipelines');
+            pipelineAsCodeRoute = `https://${componentRoute}`;
+
             if (componentRootNamespace === '') {
                 throw new Error("The 'APPLICATION_TEST_NAMESPACE' environment variable is not set. Please ensure that the environment variable is defined properly or you have cluster connection.");
             }
@@ -82,14 +89,15 @@ export const gitLabProviderBasicTests = (softwareTemplateName: string) => {
                     branch: 'main',
                     gitlabServer: 'gitlab.com',
                     hostType: 'GitLab',
-                    imageName: 'rhtap-qe',
+                    imageName: quayImageName,
                     imageOrg: quayImageOrg,
                     imageRegistry: 'quay.io',
                     name: repositoryName,
                     namespace: componentRootNamespace,
                     owner: "user:guest",
                     repoName: repositoryName,
-                    repoOwner: gitLabOrganization
+                    repoOwner: gitLabOrganization, 
+                    ciType: "tekton"
                 }
             };
         
@@ -151,7 +159,7 @@ export const gitLabProviderBasicTests = (softwareTemplateName: string) => {
             * Creates an empty commit in the repository and expect that a pipelinerun start. Bug which affect to completelly finish this step: https://issues.redhat.com/browse/RHTAPBUGS-1136
         */
         it(`Creates empty commit to trigger a pipeline run`, async ()=> {
-            await gitLabProvider.createProjectWebHook(gitlabRepositoryID, 'https://pipelines-as-code-controller-openshift-pipelines.apps.rhtap-staging.7g6o.p1.openshiftapps.com')    
+            await gitLabProvider.createProjectWebHook(gitlabRepositoryID, pipelineAsCodeRoute);
         }, 120000)
     
         /**
@@ -184,5 +192,14 @@ export const gitLabProviderBasicTests = (softwareTemplateName: string) => {
             }
 
         }, 900000)
+
+        /**
+        * Deletes created applications
+        */
+        afterAll(async () => {
+            if (process.env.CLEAN_AFTER_TESTS === 'true') {
+                await cleanAfterTestGitLab(gitLabProvider, kubeClient, RHTAPRootNamespace, gitLabOrganization, gitlabRepositoryID, repositoryName)
+            }
+        })
     })
 }
