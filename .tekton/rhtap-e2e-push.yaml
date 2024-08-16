@@ -10,7 +10,7 @@ metadata:
       == "main"
   creationTimestamp: null
   labels:
-    appstudio.openshift.io/application: rhtap-cli
+    appstudio.openshift.io/application: rhtap-e2e
     appstudio.openshift.io/component: rhtap-e2e
     pipelines.appstudio.openshift.io/type: build
   name: rhtap-e2e-on-push
@@ -22,11 +22,9 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/ascerra-tenant/rhtap-cli/rhtap-e2e:{{revision}}
+    value: quay.io/redhat-user-workloads-stage/ascerra-tenant/rhtap-e2e/rhtap-e2e:{{revision}}
   - name: dockerfile
     value: Dockerfile
-  - name: path-context
-    value: .
   pipelineSpec:
     finally:
     - name: show-sbom
