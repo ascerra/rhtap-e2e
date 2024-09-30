@@ -70,3 +70,13 @@ spec:
           value: "$(tasks.test-metadata.results.git-url)"
         - name: git-revision
           value: "$(tasks.test-metadata.results.git-revision)"
+    - name: wait-8-hours
+      runAfter:
+        - provision-cluster
+      taskSpec:
+        steps:
+          - name: sleep
+            image: busybox
+            script: |
+              # Sleep for 8 hours (8 * 60 * 60 seconds)
+              sleep 28800
